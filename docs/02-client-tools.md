@@ -16,13 +16,6 @@ brew install cfssl
 brew link cfssl
 ```
 
-```
-chmod +x cfssl cfssljson
-```
-
-```
-sudo mv cfssl cfssljson /usr/local/bin/
-```
 
 ### Linux
 
