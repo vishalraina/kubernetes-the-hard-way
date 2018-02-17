@@ -111,6 +111,7 @@ for i in 0 1 2; do
     --scopes compute-rw,storage-ro,service-management,service-control,logging-write,monitoring \
     --subnet kubernetes \
     --tags kubernetes-the-hard-way,controller
+    --zone us-west1-a
 done
 ```
 
@@ -120,6 +121,8 @@ Each worker instance requires a pod subnet allocation from the Kubernetes cluste
 
 > The Kubernetes cluster CIDR range is defined by the Controller Manager's `--cluster-cidr` flag. In this tutorial the cluster CIDR range will be set to `10.200.0.0/16`, which supports 254 subnets.
 
+ --zone us-west1-a please change this to your desried zone.
+ 
 Create three compute instances which will host the Kubernetes worker nodes:
 
 ```
@@ -136,6 +139,7 @@ for i in 0 1 2; do
     --scopes compute-rw,storage-ro,service-management,service-control,logging-write,monitoring \
     --subnet kubernetes \
     --tags kubernetes-the-hard-way,worker
+    --zone us-west1-a
 done
 ```
 
