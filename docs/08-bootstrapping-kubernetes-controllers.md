@@ -1,59 +1,44 @@
-# Bootstrapping the Kubernetes Control Plane
+#!/bin/bash 
+set -x
+#Run this script in debug mode
 
-In this lab you will bootstrap the Kubernetes control plane across three compute instances and configure it for high availability. You will also create an external load balancer that exposes the Kubernetes API Servers to remote clients. The following components will be installed on each node: Kubernetes API Server, Scheduler, and Controller Manager.
+#Bash script based on steps mentioned in 
+#https://github.com/vishalraina/kubernetes-the-hard-way/blob/master/docs/08-bootstrapping-kubernetes-controllers.md
 
-## Prerequisites
 
-The commands in this lab must be run on each controller instance: `controller-0`, `controller-1`, and `controller-2`. Login to each controller instance using the `gcloud` command. Example:
-
-```
-gcloud compute ssh controller-0
-```
-
-## Provision the Kubernetes Control Plane
-
-### Download and Install the Kubernetes Controller Binaries
-
-Download the official Kubernetes release binaries:
-
-```
+#Locate internal IP
+#Incase salt or Ansible this can handled by getting host IP
+INTERNAL_IP=$(curl -s -H "Metadata-Flavor: Google" \
+  http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)
+  
+#Download Kubernetes binaries
 wget -q --show-progress --https-only --timestamping \
   "https://storage.googleapis.com/kubernetes-release/release/v1.9.0/bin/linux/amd64/kube-apiserver" \
   "https://storage.googleapis.com/kubernetes-release/release/v1.9.0/bin/linux/amd64/kube-controller-manager" \
   "https://storage.googleapis.com/kubernetes-release/release/v1.9.0/bin/linux/amd64/kube-scheduler" \
   "https://storage.googleapis.com/kubernetes-release/release/v1.9.0/bin/linux/amd64/kubectl"
-```
 
-Install the Kubernetes binaries:
-
-```
 chmod +x kube-apiserver kube-controller-manager kube-scheduler kubectl
-```
 
-```
+#Install the Kubernetes binaries
 sudo mv kube-apiserver kube-controller-manager kube-scheduler kubectl /usr/local/bin/
-```
 
-### Configure the Kubernetes API Server
+ls -ltr /usr/local/bin/kube-apiserver 
+ls -ltr /usr/local/bin/kube-controller-manager 
+ls -ltr /usr/local/bin/kube-scheduler 
+ls -ltr /usr/local/bin/kubectl
 
-```
+#Configure the Kubernetes API Server
 sudo mkdir -p /var/lib/kubernetes/
-```
-
-```
 sudo mv ca.pem ca-key.pem kubernetes-key.pem kubernetes.pem encryption-config.yaml /var/lib/kubernetes/
-```
+ls -ltr /var/lib/kubernetes/
 
-The instance internal IP address will be used to advertise the API Server to members of the cluster. Retrieve the internal IP address for the current compute instance:
-
-```
+#Get internal IP
 INTERNAL_IP=$(curl -s -H "Metadata-Flavor: Google" \
   http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)
-```
+  
+ #Create the kube-apiserver.service systemd unit file
 
-Create the `kube-apiserver.service` systemd unit file:
-
-```
 cat > kube-apiserver.service <<EOF
 [Unit]
 Description=Kubernetes API Server
@@ -98,13 +83,28 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-```
 
-### Configure the Kubernetes Controller Manager
+#Create the kube-scheduler.service systemd unit file
 
-Create the `kube-controller-manager.service` systemd unit file:
+cat > kube-scheduler.service <<EOF
+[Unit]
+Description=Kubernetes Scheduler
+Documentation=https://github.com/kubernetes/kubernetes
 
-```
+[Service]
+ExecStart=/usr/local/bin/kube-scheduler \\
+  --leader-elect=true \\
+  --master=http://127.0.0.1:8080 \\
+  --v=2
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+#Create the kube-controller-manager.service systemd unit file
+
 cat > kube-controller-manager.service <<EOF
 [Unit]
 Description=Kubernetes Controller Manager
@@ -129,187 +129,19 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-```
 
-### Configure the Kubernetes Scheduler
-
-Create the `kube-scheduler.service` systemd unit file:
-
-```
-cat > kube-scheduler.service <<EOF
-[Unit]
-Description=Kubernetes Scheduler
-Documentation=https://github.com/kubernetes/kubernetes
-
-[Service]
-ExecStart=/usr/local/bin/kube-scheduler \\
-  --leader-elect=true \\
-  --master=http://127.0.0.1:8080 \\
-  --v=2
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-```
-
-### Start the Controller Services
-
-```
+#Deploy reload and start Controller Services
+ls -ltr  /etc/systemd/system/
+sleep 2
+echo "I am sleeping to 2 seconds"
 sudo mv kube-apiserver.service kube-scheduler.service kube-controller-manager.service /etc/systemd/system/
-```
-
-```
 sudo systemctl daemon-reload
-```
-
-```
 sudo systemctl enable kube-apiserver kube-controller-manager kube-scheduler
-```
-
-```
 sudo systemctl start kube-apiserver kube-controller-manager kube-scheduler
-```
 
-> Allow up to 10 seconds for the Kubernetes API Server to fully initialize.
+#Sleep 10 seconds before running verification tests
+sleep 10
 
-### Verification
-
-```
+#Run verification 
+##TODO check for error code in future
 kubectl get componentstatuses
-```
-
-```
-NAME                 STATUS    MESSAGE              ERROR
-controller-manager   Healthy   ok
-scheduler            Healthy   ok
-etcd-2               Healthy   {"health": "true"}
-etcd-0               Healthy   {"health": "true"}
-etcd-1               Healthy   {"health": "true"}
-```
-
-> Remember to run the above commands on each controller node: `controller-0`, `controller-1`, and `controller-2`.
-
-## RBAC for Kubelet Authorization
-
-In this section you will configure RBAC permissions to allow the Kubernetes API Server to access the Kubelet API on each worker node. Access to the Kubelet API is required for retrieving metrics, logs, and executing commands in pods.
-
-> This tutorial sets the Kubelet `--authorization-mode` flag to `Webhook`. Webhook mode uses the [SubjectAccessReview](https://kubernetes.io/docs/admin/authorization/#checking-api-access) API to determine authorization.
-
-```
-gcloud compute ssh controller-0
-```
-
-Create the `system:kube-apiserver-to-kubelet` [ClusterRole](https://kubernetes.io/docs/admin/authorization/rbac/#role-and-clusterrole) with permissions to access the Kubelet API and perform most common tasks associated with managing pods:
-
-```
-cat <<EOF | kubectl apply -f -
-apiVersion: rbac.authorization.k8s.io/v1beta1
-kind: ClusterRole
-metadata:
-  annotations:
-    rbac.authorization.kubernetes.io/autoupdate: "true"
-  labels:
-    kubernetes.io/bootstrapping: rbac-defaults
-  name: system:kube-apiserver-to-kubelet
-rules:
-  - apiGroups:
-      - ""
-    resources:
-      - nodes/proxy
-      - nodes/stats
-      - nodes/log
-      - nodes/spec
-      - nodes/metrics
-    verbs:
-      - "*"
-EOF
-```
-
-The Kubernetes API Server authenticates to the Kubelet as the `kubernetes` user using the client certificate as defined by the `--kubelet-client-certificate` flag.
-
-Bind the `system:kube-apiserver-to-kubelet` ClusterRole to the `kubernetes` user:
-
-```
-cat <<EOF | kubectl apply -f -
-apiVersion: rbac.authorization.k8s.io/v1beta1
-kind: ClusterRoleBinding
-metadata:
-  name: system:kube-apiserver
-  namespace: ""
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: system:kube-apiserver-to-kubelet
-subjects:
-  - apiGroup: rbac.authorization.k8s.io
-    kind: User
-    name: kubernetes
-EOF
-```
-
-## The Kubernetes Frontend Load Balancer
-
-In this section you will provision an external load balancer to front the Kubernetes API Servers. The `kubernetes-the-hard-way` static IP address will be attached to the resulting load balancer.
-
-> The compute instances created in this tutorial will not have permission to complete this section. Run the following commands from the same machine used to create the compute instances.
-
-Create the external load balancer network resources:
-
-```
-gcloud compute target-pools create kubernetes-target-pool
-```
-
-```
-gcloud compute target-pools add-instances kubernetes-target-pool \
-  --instances controller-0,controller-1,controller-2
-```
-
-```
-KUBERNETES_PUBLIC_ADDRESS=$(gcloud compute addresses describe kubernetes-the-hard-way \
-  --region $(gcloud config get-value compute/region) \
-  --format 'value(name)')
-```
-
-```
-gcloud compute forwarding-rules create kubernetes-forwarding-rule \
-  --address ${KUBERNETES_PUBLIC_ADDRESS} \
-  --ports 6443 \
-  --region $(gcloud config get-value compute/region) \
-  --target-pool kubernetes-target-pool
-```
-
-### Verification
-
-Retrieve the `kubernetes-the-hard-way` static IP address:
-
-```
-KUBERNETES_PUBLIC_ADDRESS=$(gcloud compute addresses describe kubernetes-the-hard-way \
-  --region $(gcloud config get-value compute/region) \
-  --format 'value(address)')
-```
-
-Make a HTTP request for the Kubernetes version info:
-
-```
-curl --cacert ca.pem https://${KUBERNETES_PUBLIC_ADDRESS}:6443/version
-```
-
-> output
-
-```
-{
-  "major": "1",
-  "minor": "9",
-  "gitVersion": "v1.9.0",
-  "gitCommit": "925c127ec6b946659ad0fd596fa959be43f0cc05",
-  "gitTreeState": "clean",
-  "buildDate": "2017-12-15T20:55:30Z",
-  "goVersion": "go1.9.2",
-  "compiler": "gc",
-  "platform": "linux/amd64"
-}
-```
-
-Next: [Bootstrapping the Kubernetes Worker Nodes](09-bootstrapping-kubernetes-workers.md)
