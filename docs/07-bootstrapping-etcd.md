@@ -10,9 +10,10 @@ The commands in this lab must be run on each controller instance: `controller-0`
 gcloud compute ssh controller-0
 ```
 
-## Clone https://github.com/vishalraina/kubernetes-the-hard-way/blob/master/scripts/bootstrapping-etcd.sh 
+## Here scripts for steps below.
 ```
-cd scripts
+curl -o bootstrapping-etcd.sh  \
+https://github.com/vishalraina/kubernetes-the-hard-way/blob/master/scripts/bootstrapping-etcd.sh 
 gcloud compute scp ./bootstrap.sh controller-0:
 gcloud compute ssh controller-0 --command "bash bootstrap.sh"
 gcloud compute scp ./bootstrap.sh controller-1:
