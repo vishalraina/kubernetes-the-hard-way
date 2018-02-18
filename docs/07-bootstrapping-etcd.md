@@ -10,6 +10,31 @@ The commands in this lab must be run on each controller instance: `controller-0`
 gcloud compute ssh controller-0
 ```
 
+## Clone https://github.com/vishalraina/kubernetes-the-hard-way/blob/master/scripts/bootstrapping-etcd.sh 
+```
+cd scripts
+gcloud compute scp ./bootstrap.sh controller-0:
+gcloud compute ssh controller-0 --command "bash bootstrap.sh"
+gcloud compute scp ./bootstrap.sh controller-1:
+gcloud compute ssh controller-1 --command "bash bootstrap.sh"
+gcloud compute scp ./bootstrap.sh controller-2:
+gcloud compute ssh controller-2 --command "bash bootstrap.sh"
+
+```
+> output
+
+```
+3a57933972cb5131, started, controller-2, https://10.240.0.12:2380, https://10.240.0.12:2379
+f98dc20bce6225a0, started, controller-0, https://10.240.0.10:2380, https://10.240.0.10:2379
+ffed16798470cab5, started, controller-1, https://10.240.0.11:2380, https://10.240.0.11:2379
+```
+
+
+Next: [Bootstrapping the Kubernetes Control Plane](08-bootstrapping-kubernetes-controllers.md)
+
+
+More details can be found below about how these scripts were writtem
+
 ## Bootstrapping an etcd Cluster Member
 
 ### Download and Install the etcd Binaries
